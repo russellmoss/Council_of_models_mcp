@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(git remote:*)",
+      "Bash(npm:*)",
+      "Bash(grep '\"\"type\"\"' package.json)",
+      "Bash(npx tsc:*)",
+      "Bash(echo:*)",
+      "Bash(node -e \"const g = require\\(''@google/genai''\\); console.log\\(Object.keys\\(g\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''think''\\)\\)\\)\")",
+      "Bash(node -e \"import\\(''@google/genai''\\).then\\(g => console.log\\(Object.keys\\(g\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''think''\\)\\)\\)\\)\")",
+      "Bash(node -e \"const g = require\\(''@google/genai''\\); console.log\\(g.ThinkingLevel\\)\")",
+      "Bash(claude mcp:*)",
+      "mcp__council-mcp__ask_openai",
+      "mcp__council-mcp__ask_gemini",
+      "mcp__council-mcp__ask_all",
+      "Bash(mkdir -p .claude/commands)",
+      "Bash(cp examples/claude-commands/council.md .claude/commands/council.md)",
+      "Bash(cp examples/claude-commands/refine.md .claude/commands/refine.md)",
+      "Bash(cp examples/claude-commands/setup-council.md .claude/commands/setup-council.md)",
+      "Bash(ls:*)",
+      "Bash(rm -f .claude/commands/council.md .claude/commands/refine.md .claude/commands/setup-council.md)",
+      "Bash(rmdir .claude/commands)",
+      "Bash(rmdir .claude)",
+      "Bash(node -e \"const pkg = JSON.parse\\(require\\(''fs''\\).readFileSync\\(''package.json'',''utf8''\\)\\); console.log\\(''bin:'', JSON.stringify\\(pkg.bin\\)\\)\")",
+      "Bash(node -e \"const p=JSON.parse\\(require\\(''''fs''''\\).readFileSync\\(''''package.json'''',''''utf8''''\\)\\); console.log\\(''''files:'''', !!p.files, ''''engines:'''', !!p.engines, ''''prepublishOnly:'''', !!p.scripts.prepublishOnly\\)\")",
+      "Bash(node -e \"const p=JSON.parse\\(require\\(''''fs''''\\).readFileSync\\(''''package.json'''',''''utf8''''\\)\\); console.log\\(p.files.join\\('''', ''''\\)\\)\")",
+      "Bash(node -e \"const p=JSON.parse\\(require\\(''''fs''''\\).readFileSync\\(''''package.json'''',''''utf8''''\\)\\); console.log\\(p.engines.node\\)\")",
+      "Bash(grep -c '\\\\.env$')",
+      "Bash(node -e 'const p=JSON.parse\\(require\\(\"\"fs\"\"\\).readFileSync\\(\"\"package.json\"\",\"\"utf8\"\"\\)\\); console.log\\(\"\"files:\"\", Boolean\\(p.files\\), \"\"engines:\"\", Boolean\\(p.engines\\), \"\"prepublishOnly:\"\", Boolean\\(p.scripts.prepublishOnly\\)\\)')",
+      "Bash(node -e 'const p=JSON.parse\\(require\\(\"\"fs\"\"\\).readFileSync\\(\"\"package.json\"\",\"\"utf8\"\"\\)\\); console.log\\(p.files.join\\(\"\", \"\"\\)\\)')",
+      "Bash(node -e 'const p=JSON.parse\\(require\\(\"\"fs\"\"\\).readFileSync\\(\"\"package.json\"\",\"\"utf8\"\"\\)\\); console.log\\(p.engines.node\\)')",
+      "Bash(wc -l examples/claude-commands/*)",
+      "Bash(node:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}
