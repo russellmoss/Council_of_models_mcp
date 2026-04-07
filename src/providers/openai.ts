@@ -6,7 +6,7 @@ let client: OpenAI | null = null;
 
 function getClient(): OpenAI {
   if (!client) {
-    const apiKey = process.env[OPENAI_CONFIG.apiKeyEnvVar];
+    const apiKey = process.env[OPENAI_CONFIG.apiKeyEnvVar!];
     if (!apiKey) {
       throw new Error(
         `Missing ${OPENAI_CONFIG.apiKeyEnvVar} environment variable. ` +

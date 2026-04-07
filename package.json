@@ -1,7 +1,7 @@
 {
   "name": "council-of-models-mcp",
-  "version": "1.0.0",
-  "description": "MCP server that exposes OpenAI and Google Gemini as tools for Claude Code agents",
+  "version": "2.0.0",
+  "description": "MCP server that exposes OpenAI, Codex CLI, and Google Gemini as tools for Claude Code agents",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -31,9 +31,11 @@
   "keywords": [
     "mcp",
     "openai",
+    "codex",
     "gemini",
     "llm",
-    "claude-code"
+    "claude-code",
+    "council"
   ],
   "license": "MIT",
   "repository": {

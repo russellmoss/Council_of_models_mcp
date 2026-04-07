@@ -6,18 +6,18 @@ import "dotenv/config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { askOpenAI, askGemini } from "./providers/index.js";
-import { OPENAI_CONFIG, GEMINI_CONFIG } from "./config.js";
+import { askOpenAI, askCodex, askGemini } from "./providers/index.js";
+import { OPENAI_CONFIG, CODEX_CONFIG, GEMINI_CONFIG } from "./config.js";
 
 const server = new McpServer({
   name: "council-of-models",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
 // --- Tool: ask_openai ---
 server.tool(
   "ask_openai",
-  `Send a prompt to OpenAI and get a response. Default model: ${OPENAI_CONFIG.default.id} (${OPENAI_CONFIG.default.description}). For harder reasoning tasks, override with model: "gpt-5.4-pro" (slower, may take minutes). Available models: ${OPENAI_CONFIG.available.map((m) => m.id).join(", ")}`,
+  `Send a prompt to OpenAI via API (requires OPENAI_API_KEY). Default model: ${OPENAI_CONFIG.default.id} (${OPENAI_CONFIG.default.description}). Available models: ${OPENAI_CONFIG.available.map((m) => m.id).join(", ")}`,
   {
     prompt: z.string().describe("The prompt to send to OpenAI"),
     system_prompt: z
@@ -28,13 +28,13 @@ server.tool(
       .string()
       .optional()
       .describe(
-        `Model to use. Defaults to ${OPENAI_CONFIG.default.id}. Use "gpt-5.4-pro" for deep reasoning (slower). Options: ${OPENAI_CONFIG.available.map((m) => m.id).join(", ")}`
+        `Model to use. Defaults to ${OPENAI_CONFIG.default.id}. Options: ${OPENAI_CONFIG.available.map((m) => m.id).join(", ")}`
       ),
     reasoning_effort: z
       .enum(["low", "medium", "high"])
       .optional()
       .describe(
-        'Controls how much reasoning effort the model spends. "high" = more thorough but slower/costlier. Default: model decides. Particularly useful with gpt-5.4 and gpt-5.4-pro.'
+        'Controls how much reasoning effort the model spends. "high" = more thorough but slower/costlier.'
       ),
   },
   {
@@ -58,6 +58,59 @@ server.tool(
     }
 
     let header = `**OpenAI Response** (model: ${response.model})`;
+    if (response.usedFallback) {
+      header += `\n⚠️ Used fallback model: ${response.error}`;
+    }
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `${header}\n\n---\n\n${response.text}`,
+        },
+      ],
+    };
+  }
+);
+
+// --- Tool: ask_codex ---
+server.tool(
+  "ask_codex",
+  `Send a prompt to OpenAI via the locally-installed Codex CLI (no API key needed — uses codex login). Default model: ${CODEX_CONFIG.default.id} (${CODEX_CONFIG.default.description}). Available models: ${CODEX_CONFIG.available.map((m) => m.id).join(", ")}`,
+  {
+    prompt: z.string().describe("The prompt to send to Codex CLI"),
+    system_prompt: z
+      .string()
+      .optional()
+      .describe("Optional system prompt to set the context/role for the model"),
+    model: z
+      .string()
+      .optional()
+      .describe(
+        `Model to use. Defaults to ${CODEX_CONFIG.default.id}. Options: ${CODEX_CONFIG.available.map((m) => m.id).join(", ")}`
+      ),
+  },
+  {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true,
+  },
+  async ({ prompt, system_prompt, model }) => {
+    const response = await askCodex(prompt, system_prompt, model);
+
+    if (response.error && !response.text) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `ERROR from Codex (${response.model}): ${response.error}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    let header = `**Codex Response** (model: ${response.model})`;
     if (response.usedFallback) {
       header += `\n⚠️ Used fallback model: ${response.error}`;
     }
@@ -129,17 +182,27 @@ server.tool(
 // --- Tool: ask_all ---
 server.tool(
   "ask_all",
-  `Send the same prompt to BOTH OpenAI (${OPENAI_CONFIG.default.id}) and Gemini (${GEMINI_CONFIG.default.id}) in parallel. Returns both responses for comparison and cross-validation. If one provider fails, the other's response is still returned. If both fail, returns an error. Ideal for the /council workflow.`,
+  `Send the same prompt to TWO providers in parallel and compare responses. Use mode "codex" (default) for Codex CLI + Gemini — no OpenAI API costs. Use mode "openai" for OpenAI API + Gemini. If one provider fails, the other's response is still returned. Ideal for the /council workflow.`,
   {
     prompt: z.string().describe("The prompt to send to both providers"),
     system_prompt: z
       .string()
       .optional()
       .describe("Optional system prompt applied to both providers"),
+    mode: z
+      .enum(["codex", "openai"])
+      .optional()
+      .describe(
+        'Which provider to pair with Gemini. "codex" (default) = local Codex CLI, free. "openai" = OpenAI API, requires API key.'
+      ),
     openai_model: z
       .string()
       .optional()
-      .describe(`OpenAI model override. Default: ${OPENAI_CONFIG.default.id}`),
+      .describe(`OpenAI API model override (only used in "openai" mode). Default: ${OPENAI_CONFIG.default.id}`),
+    codex_model: z
+      .string()
+      .optional()
+      .describe(`Codex CLI model override (only used in "codex" mode). Default: ${CODEX_CONFIG.default.id}`),
     gemini_model: z
       .string()
       .optional()
@@ -147,25 +210,34 @@ server.tool(
     openai_reasoning_effort: z
       .enum(["low", "medium", "high"])
       .optional()
-      .describe('OpenAI reasoning effort override. "high" = more thorough analysis.'),
+      .describe('OpenAI reasoning effort (only used in "openai" mode).'),
   },
   {
     readOnlyHint: true,
     destructiveHint: false,
     openWorldHint: true,
   },
-  async ({ prompt, system_prompt, openai_model, gemini_model, openai_reasoning_effort }) => {
-    const [openaiResult, geminiResult] = await Promise.allSettled([
-      askOpenAI(prompt, system_prompt, openai_model, openai_reasoning_effort),
+  async ({ prompt, system_prompt, mode, openai_model, codex_model, gemini_model, openai_reasoning_effort }) => {
+    const useCodex = (mode ?? "codex") === "codex";
+
+    // Build the non-Gemini provider call
+    const otherProviderPromise = useCodex
+      ? askCodex(prompt, system_prompt, codex_model)
+      : askOpenAI(prompt, system_prompt, openai_model, openai_reasoning_effort);
+
+    const otherLabel = useCodex ? "Codex" : "OpenAI";
+
+    const [otherResult, geminiResult] = await Promise.allSettled([
+      otherProviderPromise,
       askGemini(prompt, system_prompt, gemini_model),
     ]);
 
     // Detect individual failures
-    const openaiFailed =
-      openaiResult.status === "rejected" ||
-      (openaiResult.status === "fulfilled" &&
-        !!openaiResult.value.error &&
-        !openaiResult.value.text);
+    const otherFailed =
+      otherResult.status === "rejected" ||
+      (otherResult.status === "fulfilled" &&
+        !!otherResult.value.error &&
+        !otherResult.value.text);
 
     const geminiFailed =
       geminiResult.status === "rejected" ||
@@ -174,11 +246,11 @@ server.tool(
         !geminiResult.value.text);
 
     // If BOTH failed, return MCP error
-    if (openaiFailed && geminiFailed) {
-      const openaiError =
-        openaiResult.status === "fulfilled"
-          ? openaiResult.value.error
-          : String(openaiResult.reason);
+    if (otherFailed && geminiFailed) {
+      const otherError =
+        otherResult.status === "fulfilled"
+          ? otherResult.value.error
+          : String(otherResult.reason);
       const geminiError =
         geminiResult.status === "fulfilled"
           ? geminiResult.value.error
@@ -188,7 +260,7 @@ server.tool(
         content: [
           {
             type: "text" as const,
-            text: `Both providers failed.\n\nOpenAI: ${openaiError}\n\nGemini: ${geminiError}`,
+            text: `Both providers failed.\n\n${otherLabel}: ${otherError}\n\nGemini: ${geminiError}`,
           },
         ],
         isError: true,
@@ -198,16 +270,16 @@ server.tool(
     // Build response sections
     const sections: string[] = [];
 
-    // OpenAI section
-    if (openaiResult.status === "fulfilled") {
-      const r = openaiResult.value;
-      let header = `## OpenAI Response (model: ${r.model})`;
+    // Non-Gemini provider section
+    if (otherResult.status === "fulfilled") {
+      const r = otherResult.value;
+      let header = `## ${otherLabel} Response (model: ${r.model})`;
       if (r.usedFallback) header += `\n⚠️ ${r.error}`;
       if (r.error && !r.text) header += `\n❌ ${r.error}`;
       sections.push(`${header}\n\n${r.text || "No response"}`);
     } else {
       sections.push(
-        `## OpenAI Response\n\n❌ FAILED: ${openaiResult.reason}`
+        `## ${otherLabel} Response\n\n❌ FAILED: ${otherResult.reason}`
       );
     }
 
@@ -224,11 +296,13 @@ server.tool(
       );
     }
 
+    const modeLabel = useCodex ? "Codex CLI + Gemini" : "OpenAI API + Gemini";
+
     return {
       content: [
         {
           type: "text" as const,
-          text: `# Council of Models — Parallel Response\n\n${sections.join("\n\n---\n\n")}`,
+          text: `# Council of Models — Parallel Response (${modeLabel})\n\n${sections.join("\n\n---\n\n")}`,
         },
       ],
     };
@@ -240,7 +314,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // IMPORTANT: console.error only — stdout is reserved for MCP JSON-RPC
-  console.error("[council-mcp] Server running on stdio");
+  console.error("[council-mcp] Server running on stdio (OpenAI API + Codex CLI + Gemini API)");
 }
 
 main().catch((error) => {

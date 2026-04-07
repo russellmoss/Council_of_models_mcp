@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, statS
 import { resolve, join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { homedir } from "os";
-import { OPENAI_CONFIG, GEMINI_CONFIG } from "./config.js";
+import { OPENAI_CONFIG, CODEX_CONFIG, GEMINI_CONFIG } from "./config.js";
 
 // ─── Path Resolution ──────────────────────────────────────────────────
 
@@ -143,9 +143,9 @@ async function main() {
   }
 
   // Check for existing keys in environment
-  const existingOpenAI = process.env[OPENAI_CONFIG.apiKeyEnvVar];
+  const existingOpenAI = process.env[OPENAI_CONFIG.apiKeyEnvVar!];
   const existingGemini =
-    process.env[GEMINI_CONFIG.apiKeyEnvVar] || process.env["GOOGLE_API_KEY"];
+    process.env[GEMINI_CONFIG.apiKeyEnvVar!] || process.env["GOOGLE_API_KEY"];
 
   let openaiKey: string | undefined = existingOpenAI;
   let geminiKey: string | undefined = existingGemini;
@@ -180,7 +180,7 @@ async function main() {
       });
       if (p.isCancel(key)) return cancel();
       openaiKey = key;
-      process.env[OPENAI_CONFIG.apiKeyEnvVar] = key;
+      process.env[OPENAI_CONFIG.apiKeyEnvVar!] = key;
     }
   }
 
@@ -214,19 +214,18 @@ async function main() {
       });
       if (p.isCancel(key)) return cancel();
       geminiKey = key;
-      process.env[GEMINI_CONFIG.apiKeyEnvVar] = key;
+      process.env[GEMINI_CONFIG.apiKeyEnvVar!] = key;
     }
   }
 
   if (!openaiKey && !geminiKey) {
-    p.log.error("At least one provider key is required. Re-run the wizard when you have a key.");
-    p.outro("Setup incomplete.");
-    process.exit(1);
-  }
-
-  if (!openaiKey || !geminiKey) {
+    p.log.warn(
+      "No API keys entered. You can still use Codex CLI if installed (npm i -g @openai/codex).\n" +
+        "   For full cross-validation, at least one API key (OpenAI or Gemini) is recommended."
+    );
+  } else if (!openaiKey || !geminiKey) {
     const missing = !openaiKey ? "OpenAI" : "Gemini";
-    p.log.warn(`${missing} skipped. Cross-validation works best with both providers.`);
+    p.log.warn(`${missing} skipped. Cross-validation works best with multiple providers.`);
   }
 
   // ─── Write .env (clone context only) ────────────────────────────────
@@ -297,12 +296,40 @@ async function main() {
     }
   }
 
-  // At least one key was provided (enforced above), check if any verification passed
-  const anyProviderConfigured = openaiKey || geminiKey;
-  const anyProviderOk = openaiOk || geminiOk;
+  // ─── Test Codex CLI (optional, no key needed) ─────────────────────
+
+  let codexOk = false;
+  {
+    const { isCodexAvailable, askCodex } = await import("./providers/codex.js");
+    const codexFound = await isCodexAvailable();
+
+    if (codexFound) {
+      s.start(`Testing Codex CLI (${CODEX_CONFIG.default.id})...`);
+      try {
+        const result = await askCodex("Reply with exactly: OK");
+        if (result.text) {
+          codexOk = true;
+          s.stop(`Codex CLI connected (${result.model})`);
+        } else {
+          s.stop(`Codex CLI failed: ${result.error || "empty response"}`);
+        }
+      } catch (e) {
+        s.stop(`Codex CLI failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else {
+      p.log.info(
+        "Codex CLI not found. This is optional — install it for free OpenAI-model access:\n" +
+          "   npm i -g @openai/codex && codex login"
+      );
+    }
+  }
+
+  // At least one provider must work (API key OR Codex CLI)
+  const anyProviderConfigured = openaiKey || geminiKey || codexOk;
+  const anyProviderOk = openaiOk || geminiOk || codexOk;
 
   if (anyProviderConfigured && !anyProviderOk) {
-    p.log.error("All configured providers failed. Check your API keys and try again.");
+    p.log.error("All configured providers failed. Check your API keys / Codex login and try again.");
     p.outro("Setup incomplete.");
     process.exit(1);
   }
@@ -439,11 +466,17 @@ async function main() {
 
   const nextSteps: string[] = [];
 
-  if (openaiOk && geminiOk) {
-    nextSteps.push("Both providers working");
-  } else if (openaiOk || geminiOk) {
+  const workingProviders = [
+    openaiOk && "OpenAI API",
+    codexOk && "Codex CLI",
+    geminiOk && "Gemini API",
+  ].filter(Boolean);
+
+  if (workingProviders.length >= 2) {
+    nextSteps.push(`${workingProviders.join(" + ")} working — ready for cross-validation`);
+  } else if (workingProviders.length === 1) {
     nextSteps.push(
-      `${openaiOk ? "OpenAI" : "Gemini"} working (add the other provider for cross-validation)`
+      `${workingProviders[0]} working (add another provider for cross-validation)`
     );
   }
 

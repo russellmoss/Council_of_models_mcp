@@ -1,8 +1,8 @@
 # Council of Models MCP Server
 
-**This project adds 3 extra AI tools to Claude Code so Claude can ask OpenAI and Gemini for second opinions.**
+**This project adds 4 AI tools to Claude Code so Claude can ask OpenAI, Gemini, and the local Codex CLI for second opinions.**
 
-It works by running a small local server that Claude Code talks to behind the scenes. You set it up once, and then any Claude Code session can call `ask_openai`, `ask_gemini`, or `ask_all` as native tools.
+It works by running a small local server that Claude Code talks to behind the scenes. You set it up once, and then any Claude Code session can call `ask_openai`, `ask_codex`, `ask_gemini`, or `ask_all` as native tools.
 
 > New to MCP? It stands for Model Context Protocol — it's how Claude Code connects to external tools. You don't need to understand the protocol to use this project.
 
@@ -15,6 +15,9 @@ It works by running a small local server that Claude Code talks to behind the sc
 | Claude Code | `claude --version` | [claude.ai/code](https://claude.ai/code) |
 | OpenAI API key | — | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | Gemini API key | — | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| Codex CLI (optional) | `codex --version` | `npm i -g @openai/codex` then `codex login` |
+
+> **Tip**: You don't need all providers. At minimum you need **one API key** (OpenAI or Gemini). Codex CLI is optional — it lets you access OpenAI models through your local Codex installation instead of paying for API calls separately.
 
 ---
 
@@ -64,17 +67,22 @@ Verify both providers work:
 npm run smoke
 ```
 
-You should see two green checkmarks:
+You should see green checkmarks for your configured providers:
 
 ```
-Testing OpenAI...
+Testing OpenAI (API)...
   ✅ OpenAI OK (model: gpt-5.4)
 
-Testing Gemini...
+Testing Codex (CLI)...
+  ✅ Codex OK (model: gpt-5.4)
+
+Testing Gemini (API)...
   ✅ Gemini OK (model: gemini-3.1-pro-preview)
 
-=== Results: 2 passed, 0 failed ===
+=== Results: 3 passed, 0 failed ===
 ```
+
+> Codex CLI shows as "skipped" if not installed — that's fine, it's optional.
 
 If either provider fails, check [Common First-Run Problems](#common-first-run-problems) below.
 
@@ -103,10 +111,10 @@ It walks you through API keys, tests providers, registers with Claude Code, and 
 Start a **new** Claude Code session (important — existing sessions don't pick up new servers), then try:
 
 ```
-Use ask_openai to summarize what this repo does in one paragraph.
+Use ask_all to summarize what this repo does in one paragraph.
 ```
 
-That's it. You're done.
+That's it. You're done. By default, `ask_all` uses Codex CLI + Gemini (no extra API costs).
 
 ---
 
@@ -114,7 +122,7 @@ That's it. You're done.
 
 - **Smoke test passes**: Both providers show a green checkmark and respond with "OK". This means your API keys are valid and the server can reach both providers.
 - **Claude Code sees the server**: Run `claude mcp list` and look for `council-mcp: ... ✓ Connected`.
-- **Tools work in Claude Code**: In a new session, ask Claude to use `ask_openai`, `ask_gemini`, or `ask_all` and you get responses back.
+- **Tools work in Claude Code**: In a new session, ask Claude to use `ask_openai`, `ask_codex`, `ask_gemini`, or `ask_all` and you get responses back.
 
 ---
 
@@ -146,19 +154,28 @@ The model ID may have changed. Check the provider's docs for current model IDs a
 
 After setup, open a **new** Claude Code session and try these:
 
-1. **Ask OpenAI:**
+1. **Ask OpenAI (API):**
    ```
    Use ask_openai to summarize what this repo does in one paragraph.
    ```
 
-2. **Ask Gemini:**
+2. **Ask Codex (CLI, free):**
+   ```
+   Use ask_codex to summarize what this repo does in one paragraph.
+   ```
+
+3. **Ask Gemini:**
    ```
    Use ask_gemini to critique this implementation plan.
    ```
 
-3. **Ask both and compare:**
+4. **Ask both and compare (free mode):**
    ```
    Use ask_all to compare both answers about the pros and cons of microservices vs monoliths.
+   ```
+   This defaults to `mode: "codex"` (Codex CLI + Gemini). To use OpenAI API instead:
+   ```
+   Use ask_all with mode "openai" to compare both answers about microservices vs monoliths.
    ```
 
 ---
@@ -184,9 +201,12 @@ The tools above (`ask_openai`, `ask_gemini`, `ask_all`) are the building blocks.
 ├──────────────────────────────────────────────────┤
 │  Council MCP Server (global, registered once)     │
 │                                                   │
-│  ask_openai  — sends prompts to GPT               │
+│  ask_openai  — sends prompts to GPT via API       │
+│  ask_codex   — sends prompts to GPT via Codex CLI │
 │  ask_gemini  — sends prompts to Gemini            │
-│  ask_all     — sends to both in parallel          │
+│  ask_all     — two providers in parallel           │
+│               mode "codex"  = Codex + Gemini       │
+│               mode "openai" = OpenAI API + Gemini  │
 │                                                   │
 │  Same everywhere. Doesn't know what project       │
 │  you're in.                                       │
@@ -283,13 +303,14 @@ The `/council` and `/refine` commands contain no secrets — they're just instru
 
 ## What It Does
 
-Exposes three tools to any Claude Code session:
+Exposes four tools to any Claude Code session:
 
 | Tool | Description |
 |------|-------------|
-| `ask_openai` | Send a prompt to OpenAI (default: gpt-5.4) |
+| `ask_openai` | Send a prompt to OpenAI via API (default: gpt-5.4, requires API key) |
+| `ask_codex` | Send a prompt to OpenAI via local Codex CLI (default: gpt-5.4, no API key needed) |
 | `ask_gemini` | Send a prompt to Google Gemini (default: gemini-3.1-pro-preview with thinking enabled) |
-| `ask_all` | Send to both in parallel, get combined responses |
+| `ask_all` | Send to two providers in parallel — use `mode: "codex"` (default, free) or `mode: "openai"` (API) |
 
 ---
 
@@ -322,11 +343,13 @@ Override the default model on any tool call:
 
 ### Available models
 
-**OpenAI:**
-- `gpt-5.4` — Best overall (default)
+**OpenAI (API) and Codex (CLI) — same model family, different access method:**
+- `gpt-5.4` — Best overall (default for both)
 - `gpt-5.4-pro` — Deep reasoning (slower, opt-in)
 - `gpt-5.4-mini` — Fast and cheap
 - `gpt-5.4-nano` — Ultra fast
+
+> OpenAI API requires an API key and charges per token. Codex CLI uses your local `codex login` session — same models, no separate API charges.
 
 **Google Gemini:**
 - `gemini-3.1-pro-preview` — Flagship reasoning (default, thinking enabled)
@@ -346,9 +369,10 @@ npm run smoke
 
 - **Transport**: stdio (standard for Claude Code MCP servers)
 - **OpenAI API**: Responses API (`responses.create`) with optional `reasoning.effort` control
+- **Codex CLI**: Spawns `codex exec` as a child process, pipes prompt via stdin, reads response from temp file. No shell invocation (uses `execFile` directly). Requires `codex login` for auth.
 - **Gemini API**: `@google/genai` with native `systemInstruction` and `thinkingLevel: "high"`
 - **Fallback**: Only on transient errors — auth/config errors surface immediately
-- **Keys**: Environment variables or `.env` file (loaded via dotenv)
+- **Keys**: Environment variables or `.env` file (loaded via dotenv). Codex CLI manages its own auth.
 - **MCP SDK**: Pinned to exact tested version (1.25.2)
 
 ---

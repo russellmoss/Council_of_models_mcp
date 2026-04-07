@@ -3,8 +3,7 @@
 This document describes what is built, how it works, and where to find everything. It is intended to be read by an LLM that needs to understand, modify, or extend this project.
 
 **Built**: March 26, 2026
-**Last updated**: March 26, 2026 (v3 — workflow layer + npm publish)
-**Built by**: Claude Opus 4.6 executing `agentic_implementation_guide_v2.md` (initial build) then `agentic_guide_implementation.md` (v3 workflow layer)
+**Last updated**: March 26, 2026
 **Repo**: https://github.com/russellmoss/Council_of_models_mcp
 **Branch**: `master`
 **npm package**: `council-of-models-mcp@1.0.0` — https://www.npmjs.com/package/council-of-models-mcp
@@ -25,7 +24,9 @@ An MCP (Model Context Protocol) server that runs locally over stdio and exposes 
 
 Once registered with `claude mcp add --scope user`, these tools are available in every Claude Code session across all projects.
 
-The project also ships **example Claude Code slash command templates** (`/council`, `/refine`, `/setup-council`) that users copy into their projects to orchestrate cross-LLM validation workflows.
+The project also ships:
+- **Example Claude Code slash command templates** (`/council`, `/refine`, `/setup-council`) that users copy into their projects to orchestrate cross-LLM validation workflows.
+- **An interactive setup wizard** (`council-mcp-setup`) that walks users through API key configuration, provider verification, MCP registration, and template installation.
 
 ---
 
@@ -33,6 +34,12 @@ The project also ships **example Claude Code slash command templates** (`/counci
 
 ```
 Council_of_models_mcp/
+├── .claude/
+│   ├── commands/
+│   │   ├── council.md             # /council command (local copy for this repo)
+│   │   ├── refine.md              # /refine command (local copy for this repo)
+│   │   └── setup-council.md       # /setup-council command (local copy for this repo)
+│   └── settings.local.json        # Local permission overrides for development
 ├── examples/
 │   └── claude-commands/
 │       ├── council.md             # Generic /council — works for any project
@@ -42,6 +49,7 @@ Council_of_models_mcp/
 │   ├── index.ts                   # MCP server entry point, tool registrations (has shebang)
 │   ├── config.ts                  # Model defaults, resolveModel(), shouldFallback()
 │   ├── smoke.ts                   # Standalone smoke test script
+│   ├── setup.ts                   # Interactive setup wizard (council-mcp-setup binary)
 │   └── providers/
 │       ├── index.ts               # Re-exports askOpenAI, askGemini, ProviderResponse
 │       ├── types.ts               # ProviderResponse interface
@@ -56,7 +64,7 @@ Council_of_models_mcp/
 ├── README.md                      # npm install primary, workflow layer docs
 ├── QUICKSTART.md                  # npm install primary, Step 6 for workflow setup
 ├── actual_implementation.md       # This file
-└── agentic_guide_implementation.md # v3 implementation guide
+└── agentic_guide_rename.md        # Implementation guide used during the build
 ```
 
 ---
@@ -66,6 +74,7 @@ Council_of_models_mcp/
 ```json
 {
   "dependencies": {
+    "@clack/prompts": "^1.1.0",
     "@google/genai": "^1.46.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "dotenv": "^17.3.1",
@@ -90,25 +99,30 @@ The project uses `"type": "module"` in package.json and all imports use `.js` ex
 {
   "name": "council-of-models-mcp",
   "version": "1.0.0",
-  "bin": { "council-mcp": "dist/index.js" },
+  "bin": {
+    "council-mcp": "dist/index.js",
+    "council-mcp-setup": "dist/setup.js"
+  },
   "files": ["dist/", "examples/", ".env.example", "README.md", "QUICKSTART.md"],
   "engines": { "node": ">=18.0.0" }
 }
 ```
 
 - **Package name**: `council-of-models-mcp`
-- **Binary/executable name**: `council-mcp` (this is what users type after `npm install -g`)
-- **Published files**: `dist/`, `examples/`, `.env.example`, `README.md`, `QUICKSTART.md`, `package.json` (35 files total, ~22 kB packed)
-- **NOT published**: `src/` (TypeScript source), `.env` (secrets), `node_modules/`, `actual_implementation.md`, `agentic_guide_implementation.md`
+- **Binaries**:
+  - `council-mcp` — the MCP server (runs over stdio)
+  - `council-mcp-setup` — interactive setup wizard
+- **Published files**: `dist/`, `examples/`, `.env.example`, `README.md`, `QUICKSTART.md`, `package.json`
+- **NOT published**: `src/` (TypeScript source), `.env` (secrets), `.claude/` (local commands), `node_modules/`, `actual_implementation.md`, `agentic_guide_rename.md`
 - **`prepublishOnly`**: runs `npm run rebuild` to ensure clean compile before every publish
-- The shebang `#!/usr/bin/env node` is present in `src/index.ts` and survives `tsc` compilation into `dist/index.js`
+- The shebang `#!/usr/bin/env node` is present in both `src/index.ts` and `src/setup.ts`, and survives `tsc` compilation into `dist/`
 
 ### Install paths
 
 **npm (recommended):**
 ```bash
 npm install -g council-of-models-mcp
-claude mcp add --scope user council-mcp -- council-mcp
+council-mcp-setup              # Interactive wizard handles everything
 ```
 
 **Clone:**
@@ -149,6 +163,13 @@ export interface ProviderConfig {
 |---|---|---|
 | OpenAI | `gpt-5.4` | `gpt-5.4-mini` |
 | Gemini | `gemini-3.1-pro-preview` | `gemini-3-flash-preview` |
+
+**All available models:**
+
+| Provider | Models |
+|---|---|
+| OpenAI | `gpt-5.4-pro`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano` |
+| Gemini | `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview` |
 
 **`resolveModel(config, requestedModel?)`** — Returns the matching `ModelConfig` from the `available` list (by ID or case-insensitive name). If the requested model isn't in the list, it passes through as a custom model (the provider API validates it).
 
@@ -199,7 +220,7 @@ Key details:
 
 Uses `@google/genai` SDK with native `systemInstruction` and `ThinkingLevel` enum.
 
-**Dual API key support** (added in v3): The client checks both `GEMINI_API_KEY` and `GOOGLE_API_KEY`, preferring `GEMINI_API_KEY` if both are set:
+**Dual API key support**: The client checks both `GEMINI_API_KEY` and `GOOGLE_API_KEY`, preferring `GEMINI_API_KEY` if both are set:
 
 ```typescript
 function getClient(): GoogleGenAI {
@@ -238,10 +259,7 @@ const response = await genai.models.generateContent({
 const text = response.text;
 ```
 
-The available `ThinkingLevel` enum values are:
-```
-THINKING_LEVEL_UNSPECIFIED, LOW, MEDIUM, HIGH, MINIMAL
-```
+Note: The fallback path for Gemini does NOT include `thinkingConfig` — it calls `generateContent` with just the model, contents, and optional systemInstruction.
 
 Fallback behavior mirrors OpenAI: transient-only, gated by `shouldFallback()`.
 
@@ -288,6 +306,14 @@ All three tools include annotations (`readOnlyHint: true`, `destructiveHint: fal
 | `ask_gemini` | `prompt` (required), `system_prompt`, `model` |
 | `ask_all` | `prompt` (required), `system_prompt`, `openai_model`, `gemini_model`, `openai_reasoning_effort` |
 
+**Response formatting:**
+
+Each tool wraps provider responses with a markdown header:
+- Single-provider tools: `**OpenAI Response** (model: gpt-5.4)` or `**Gemini Response** (model: ...)`
+- `ask_all`: `# Council of Models — Parallel Response` with `## OpenAI Response` and `## Gemini Response` subsections separated by `---`
+- Fallback warnings show as `⚠️ Used fallback model: ...`
+- Errors without text return `{ isError: true }`
+
 **`ask_all` dual-failure detection:**
 
 ```typescript
@@ -318,6 +344,28 @@ async function main() {
 }
 ```
 
+### `src/setup.ts` — Interactive Setup Wizard
+
+An interactive CLI wizard built with `@clack/prompts` that walks new users through the full setup. It is exposed as the `council-mcp-setup` binary.
+
+**What it does (4 steps):**
+
+1. **API Key Configuration** — Detects existing keys in the environment. Prompts for missing keys via password input. In clone context, writes keys to `.env`. In global install context, shows the `export` commands to add to shell profile.
+
+2. **Provider Verification** — Tests each configured provider by sending `"Reply with exactly: OK"` via the same `askOpenAI`/`askGemini` functions the MCP server uses. Shows spinner during each test. Exits if all configured providers fail.
+
+3. **MCP Registration** — Checks if `claude` CLI is on PATH, checks if `council-mcp` is already registered (via `claude mcp list`). If not registered, offers to auto-register. Detects whether global binary is available or falls back to `node dist/index.js` path.
+
+4. **Template Installation** — Asks for the user's project folder path. Copies `council.md` and `refine.md` from `examples/claude-commands/` into the project's `.claude/commands/` directory. Backs up existing commands as `.bak` before overwriting.
+
+**Context detection:**
+- `isCloneContext()` — checks if `process.cwd()` contains a `package.json` with `name: "council-of-models-mcp"`. Determines whether to write `.env` or show export commands.
+- `isNpxContext()` — checks if the package root path contains `/_npx/` or `/.npm/`. Warns about unstable cache paths.
+
+**Key helper: `mergeEnvFile()`** — Reads an existing `.env` file, preserves all lines that aren't managed keys, then appends the new keys under a `# Managed by council-mcp-setup` comment.
+
+**Key helper: `buildRegistrationArgs()`** — Tries `council-mcp --help` first to check if the global binary is available. If it works, registers as `-- council-mcp`. If not, falls back to `-- node <path>/index.js`.
+
 ### `src/smoke.ts` — Provider Smoke Test
 
 Standalone script that tests both providers with `"Reply with exactly: OK"`. Exits 0 if both pass, exits 1 if either fails. All output goes to `stderr` via `console.error`.
@@ -336,15 +384,18 @@ export type { ProviderResponse } from "./types.js";
 
 ## Example Claude Code Command Templates
 
-These live in `examples/claude-commands/` and are shipped with the npm package. Users copy them into their project's `.claude/commands/` directory.
+These live in `examples/claude-commands/` and are shipped with the npm package. Users copy them into their project's `.claude/commands/` directory (either manually or via the `council-mcp-setup` wizard).
 
 ### `examples/claude-commands/council.md` — Generic /council
 
 A ready-to-use `/council` command that works for any project:
-- Auto-detects implementation plans, build guides, and architecture docs
-- Sends tailored prompts to OpenAI (with `reasoning_effort: "high"`) and Gemini separately
+- Auto-detects implementation plans, build guides, and architecture docs (checks `*implementation*guide*.md`, `*build*guide*.md`, `*implementation*plan*.md`, `ARCHITECTURE.md`, `DESIGN.md`)
+- Reads context files: `README.md`, `package.json`/`tsconfig.json`/`pyproject.toml`/`Cargo.toml`
+- Investigates the project silently (top-level listing, `src/` listing, tech stack, tests, CI)
+- Sends tailored prompts to OpenAI (with `reasoning_effort: "high"`) and Gemini **separately** (not via `ask_all`) so each prompt can be customized
 - OpenAI prompt focuses on: missing steps, wrong paths, phase ordering, ambiguity, error handling
 - Gemini prompt focuses on: design alternatives, architecture gaps, failure modes, assumptions, unasked questions
+- Both prompts require structured response format: CRITICAL / SHOULD FIX / DESIGN QUESTIONS
 - Synthesizes both responses into `council-feedback.md` with sections: Critical Issues, Design Questions, Suggested Improvements, Things to Consider, Raw Responses
 - Reports progress to the user at each step ("Sending to OpenAI...", "Waiting for Gemini...", "Synthesizing...")
 - Has bounded investigation rules — does NOT read `.env`, `node_modules/`, `dist/`, `.git/`
@@ -352,21 +403,28 @@ A ready-to-use `/council` command that works for any project:
 ### `examples/claude-commands/refine.md` — Generic /refine
 
 A ready-to-use `/refine` command that works alongside `/council`:
+- Requires both the implementation plan and `council-feedback.md` to exist
 - Reads the implementation plan + `council-feedback.md` + conversation history
-- Triages feedback into three buckets: Apply Immediately, Apply Based on User's Answers, Note but Don't Apply
+- Triages feedback into three buckets:
+  - **Apply Immediately**: wrong paths, incorrect field names, missing error handling, pattern inconsistencies, phase ordering fixes
+  - **Apply Based on User's Answers**: business logic choices, design tradeoffs, items flagged as Design Questions
+  - **Note but Don't Apply**: scope expansions, alternative approaches where current is valid, items user explicitly declined
 - Edits the plan directly, updates validation gates if affected
 - Appends a Refinement Log with changes applied, design decisions, and deferred items
 - Self-reviews the updated plan for consistency
+- Does NOT begin executing the plan — stops and waits for the user
 
 ### `examples/claude-commands/setup-council.md` — Interactive Wizard
 
 An interactive setup wizard for generating project-tailored `/council` and `/refine` commands:
 - Verifies the council-mcp MCP server is available (tool availability check only, no API call)
 - Silently investigates the project (bounded: only config files, README, top-level listing)
-- Asks 5 conversational questions: tech stack, risk areas, users/impact, existing workflow, custom checks
+- Asks 5 conversational questions: project purpose, risk areas, users/impact, existing workflow, custom checks
 - Checks for existing `/council` and `/refine` commands — offers `.bak` backup before overwriting
 - Generates tailored commands with version/date headers and progress reporting
-- Maps risk areas to the right provider (see table in the file)
+- Maps risk areas to the right provider:
+  - **OpenAI**: type safety, database/query, API contracts, security, pattern consistency
+  - **Gemini**: business logic, data quality/exports, UI/display logic
 - Supports single-provider scenarios (generates commands that use only available providers)
 - One-time generator — can be deleted after use
 
@@ -390,11 +448,13 @@ An interactive setup wizard for generating project-tailored `/council` and `/ref
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
 ```
 
-Note: `tsc` preserves the shebang (`#!/usr/bin/env node`) from `src/index.ts` into `dist/index.js`. No postbuild step needed.
+Note: `tsc` preserves the shebang (`#!/usr/bin/env node`) from source files into `dist/`. No postbuild step needed.
 
 ---
 
@@ -408,6 +468,7 @@ Note: `tsc` preserves the shebang (`#!/usr/bin/env node`) from `src/index.ts` in
 | `clean` | `rimraf dist` | Delete build output |
 | `rebuild` | `clean && build` | Full clean build |
 | `smoke` | `node dist/smoke.js` | Test both providers |
+| `setup` | `node dist/setup.js` | Run the interactive setup wizard |
 | `prepublishOnly` | `npm run rebuild` | Ensure clean build before npm publish |
 
 ---
@@ -418,6 +479,12 @@ Note: `tsc` preserves the shebang (`#!/usr/bin/env node`) from `src/index.ts` in
 
 ```bash
 npm install -g council-of-models-mcp
+council-mcp-setup    # Interactive wizard handles API keys, verification, registration, and templates
+```
+
+Or manually:
+
+```bash
 claude mcp add --scope user council-mcp -- council-mcp
 ```
 
@@ -445,64 +512,14 @@ The `.env` file is gitignored. The `.env.example` file contains placeholders and
 
 ---
 
-## Deviations from the Original Guides
-
-### From `agentic_implementation_guide_v2.md` (initial build)
-
-| Area | Guide Said | What We Did | Why |
-|---|---|---|---|
-| Gemini thinkingLevel | `thinkingLevel: "high"` (string) | `thinkingLevel: ThinkingLevel.HIGH` (enum) | `@google/genai@1.46.0` requires the enum, not a string. TypeScript compilation error `TS2820` caught this. |
-| MCP tool annotations | "Check if SDK supports them, skip if not" | Added to all three tools | SDK 1.25.2 supports `tool(name, desc, schema, annotations, cb)` signature. Confirmed by compilation. |
-| TypeScript version | Expected 5.x | Got 6.0.2 | Latest available at build time. No compatibility issues. |
-| Node.js version | Required 18+ | Got v24.14.0 | No issues. |
-| npm version | Required 9+ | Got 11.9.0 | No issues. |
-| MCP SDK pinning | Pin to exact 1.25.2 | `^1.25.2` in package.json | npm installed with caret range by default. Functionally equivalent since no 2.x exists yet. |
-| Default branch | Guide assumed `main` | Pushed to `master` | Git defaulted to `master` on init. |
-| API key setup | Shell profile as primary | `.env` file as primary | README was later rewritten to prefer `.env` for beginner friendliness. |
-| Paths | Guide used WSL `/mnt/c/...` paths | Used Windows-native `C:/Users/...` paths | Built on Windows 11 with Git Bash, not WSL. |
-
-### From `agentic_guide_implementation.md` (v3 workflow layer)
-
-| Area | Guide Said | What We Did | Why |
-|---|---|---|---|
-| Phase 3 QA cleanup | `rm -rf .claude/commands/` | Deleted only the 3 specific files we copied | Council feedback flagged blanket rm -rf as destructive — could delete pre-existing commands |
-| Phase 3 /refine test | Run /refine as part of QA | Skipped — only tested /council end-to-end | /council was the critical path; /refine depends on council-feedback.md which was generated by the /council test |
-| Phase 7 npm publish | `npm publish` directly | Required interactive 2FA authentication | npm account has 2FA enabled; had to run `npm publish` interactively for OTP |
-
----
-
-## Verified Working (Integration Test Results)
-
-### MCP Tools (initial build, March 26, 2026)
-
-All three tools tested in a live Claude Code session:
+## .gitignore
 
 ```
-ask_openai (prompt: "Say hello and confirm which model you are. One sentence.")
-→ "Hello, I'm ChatGPT, an AI language model from OpenAI."
-   model: gpt-5.4
-
-ask_gemini (prompt: "Say hello and confirm which model you are. One sentence.")
-→ "Hello, I am Gemini, a large language model built by Google."
-   model: gemini-3.1-pro-preview
-
-ask_all (prompt: "Say hello and confirm which model you are. One sentence.")
-→ OpenAI (gpt-5.4): "Hello, I'm ChatGPT, an AI language model from OpenAI."
-→ Gemini (gemini-3.1-pro-preview): "Hello, I am Gemini, a large language model built by Google."
+node_modules/
+dist/
+.env
+*.js.map
 ```
-
-### Workflow Layer (v3 QA, March 26, 2026)
-
-- `/council`, `/refine`, and `/setup-council` all discovered by Claude Code from `.claude/commands/`
-- `/council` ran end-to-end: found `agentic_guide_implementation.md`, sent tailored prompts to GPT (reasoning_effort: high) and Gemini in parallel, synthesized feedback into `council-feedback.md`
-- Smoke test passed after GEMINI_API_KEY/GOOGLE_API_KEY change: 2 passed, 0 failed
-
-### npm Package (v3, March 26, 2026)
-
-- Published as `council-of-models-mcp@1.0.0`
-- `npm pack --dry-run`: 35 files, 22.1 kB packed
-- Binary `council-mcp` correctly points to `dist/index.js` with shebang
-- No secrets (`.env`) or source (`src/`) in published package
 
 ---
 
@@ -517,6 +534,8 @@ ask_all (prompt: "Say hello and confirm which model you are. One sentence.")
 **Change fallback behavior:** Edit the `shouldFallback()` regex in `src/config.ts` to include or exclude additional error patterns.
 
 **Update example templates:** Edit files in `examples/claude-commands/`. These ship with the npm package, so bump the version and republish after changes.
+
+**Update the setup wizard:** Edit `src/setup.ts`. The wizard uses `@clack/prompts` for interactive UI (spinners, selects, confirms, password inputs). Rebuild to compile.
 
 **Publish a new version:** Bump version in `package.json`, then `npm publish` (runs `prepublishOnly` automatically for clean build). Requires 2FA.
 

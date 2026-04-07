@@ -4,14 +4,19 @@
  * UPDATE THIS FILE when new models launch.
  * This is the ONLY file that needs to change when providers release new models.
  *
- * Last updated: March 2026
- * - OpenAI: gpt-5.4 family (pro, standard, mini, nano)
+ * Last updated: April 2026
+ * - OpenAI API: gpt-5.4 family (pro, standard, mini, nano)
+ * - Codex CLI (local): Uses locally-installed OpenAI Codex CLI — no API key needed
  * - Google: gemini-3.1 family (pro-preview, flash-preview, flash-lite-preview)
  *
- * Note on OpenAI model choice:
- *   gpt-5.4 is the default — best overall, reliable, fast.
- *   gpt-5.4-pro is for deep reasoning / hard problems but can take minutes
- *   and may timeout in synchronous MCP tool calls. Use it as an explicit override.
+ * Three providers are available:
+ *   1. OpenAI API — requires OPENAI_API_KEY, uses the OpenAI SDK directly
+ *   2. Codex CLI — runs locally via `codex exec`, no API key needed (uses `codex login`)
+ *   3. Gemini API — requires GEMINI_API_KEY, uses Google GenAI SDK
+ *
+ * The `ask_all` tool lets you choose which pair to run:
+ *   - mode "codex"  → Codex CLI + Gemini (default, no OpenAI API costs)
+ *   - mode "openai" → OpenAI API + Gemini (traditional, uses API key)
  *
  * Note on Gemini model IDs:
  *   All Gemini 3.x models currently require the -preview suffix.
@@ -38,8 +43,8 @@ export interface ProviderConfig {
   fallback: ModelConfig;
   /** All available models for this provider */
   available: ModelConfig[];
-  /** Environment variable name for the API key */
-  apiKeyEnvVar: string;
+  /** Environment variable name for the API key (undefined for CLI-based providers like Codex) */
+  apiKeyEnvVar?: string;
 }
 
 export const OPENAI_CONFIG: ProviderConfig = {
@@ -76,6 +81,42 @@ export const OPENAI_CONFIG: ProviderConfig = {
     },
   ],
   apiKeyEnvVar: "OPENAI_API_KEY",
+};
+
+export const CODEX_CONFIG: ProviderConfig = {
+  default: {
+    id: "gpt-5.4",
+    name: "GPT-5.4 (Codex)",
+    description: "Best overall model via local Codex CLI. Uses your Codex login — no API key costs.",
+  },
+  fallback: {
+    id: "gpt-5.4-mini",
+    name: "GPT-5.4 Mini (Codex)",
+    description: "Faster fallback via local Codex CLI.",
+  },
+  available: [
+    {
+      id: "gpt-5.4-pro",
+      name: "GPT-5.4 Pro (Codex)",
+      description: "Deep reasoning via Codex CLI. Slower — may timeout on long tasks.",
+    },
+    {
+      id: "gpt-5.4",
+      name: "GPT-5.4 (Codex)",
+      description: "Best overall balance via Codex CLI (default)",
+    },
+    {
+      id: "gpt-5.4-mini",
+      name: "GPT-5.4 Mini (Codex)",
+      description: "Faster and lighter via Codex CLI",
+    },
+    {
+      id: "gpt-5.4-nano",
+      name: "GPT-5.4 Nano (Codex)",
+      description: "Ultra fast via Codex CLI for simple tasks",
+    },
+  ],
+  // No apiKeyEnvVar — Codex CLI handles its own auth via `codex login`
 };
 
 export const GEMINI_CONFIG: ProviderConfig = {
