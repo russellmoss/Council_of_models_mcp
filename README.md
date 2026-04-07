@@ -150,6 +150,29 @@ The model ID may have changed. Check the provider's docs for current model IDs a
 
 ---
 
+## Codex CLI vs OpenAI API — Which Should I Use?
+
+Both `ask_codex` and `ask_openai` access the same OpenAI models (gpt-5.4, etc.) — they just use different paths to get there:
+
+| | Codex CLI (`ask_codex`) | OpenAI API (`ask_openai`) |
+|---|---|---|
+| **Cost** | Uses your existing Codex/ChatGPT subscription — no per-token API charges | Pay-per-token via OpenAI API billing |
+| **Setup** | `npm i -g @openai/codex && codex login` | Get an API key from platform.openai.com |
+| **Auth** | Local login session | `OPENAI_API_KEY` env var |
+| **Speed** | Slightly slower (spawns CLI process) | Direct API call, lower latency |
+| **Best for** | Personal use, avoiding double billing | Teams with API budgets, CI/CD pipelines |
+
+**The `ask_all` tool defaults to `mode: "codex"`** — pairing Codex CLI with Gemini API. This gives you cross-model validation without paying for OpenAI API calls on top of your existing subscription.
+
+To switch to OpenAI API mode:
+```
+Use ask_all with mode "openai" to review this implementation plan.
+```
+
+**If you already have Codex installed and logged in, you don't need an OpenAI API key at all.** Just set your Gemini API key and you're ready to go.
+
+---
+
 ## Demo Prompts
 
 After setup, open a **new** Claude Code session and try these:
@@ -182,7 +205,7 @@ After setup, open a **new** Claude Code session and try these:
 
 ## Using It in Your Projects
 
-The tools above (`ask_openai`, `ask_gemini`, `ask_all`) are the building blocks. The real power comes from **project-specific slash commands** that orchestrate those tools into a cross-validation workflow.
+The tools above (`ask_openai`, `ask_codex`, `ask_gemini`, `ask_all`) are the building blocks. The real power comes from **project-specific slash commands** that orchestrate those tools into a cross-validation workflow.
 
 ### The two-layer architecture
 
@@ -278,7 +301,7 @@ Start a new Claude Code session and run `/setup-council`. Answer 5 questions abo
 ```
 /new-feature      →  explore codebase, discover what needs to change
 /build-guide      →  generate a phased implementation plan
-/council          →  GPT + Gemini cross-validate the plan
+/council          →  Codex + Gemini cross-validate the plan
   ↳ you answer the design questions they surface
 /refine           →  update the plan with all feedback
   ↳ optionally run /council again on the refined plan
